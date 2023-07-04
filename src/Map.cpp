@@ -12,6 +12,9 @@ Map::Map(LGFX *display, Character *c, unsigned char (*bmp)[2048]) {
   move_diff = 1;
   offset_x = 0;
   image = bmp;
+  slow_offset_x = 0;
+  slow_scroll_from = 3;
+  slow_scroll_to = 3;
   scroll_from = 4;
   scroll_to = 7;
   sprite->createSprite(240, 32 * ((scroll_to - scroll_from) + 1));
@@ -40,6 +43,9 @@ uint32_t Map::update() {
       offset_x += move_diff;
       offset_x = (offset_x < 0 ? width + offset_x : offset_x) % width;
       e = drawPartialMap();
+      slow_offset_x += move_diff / 2;
+      slow_offset_x = (slow_offset_x < 0 ? width + slow_offset_x : slow_offset_x) % width;
+      e += drawPartialMap(slow_offset_x, slow_scroll_from, slow_scroll_to);
     }
     frame++;
     frame %= speed;
@@ -69,6 +75,18 @@ uint32_t Map::drawPartialMap() {
   }
   chara->drawBmpOnSprite(sprite, 0, scroll_from * 32);
   sprite->pushSprite(0, scroll_from * 32);
+  return millis() - startTime;
+}
+
+uint32_t Map::drawPartialMap(int offset, int from, int to) {
+  uint32_t startTime = millis();
+  for (int i = from ; i <= to; i++) {
+    for (int j = 0; j < 8; j++) {
+      drawBmpOnSprite((unsigned char *)image[bgmap[i][j]], offset + j * 32, (i - from) * 32, 32, 32);
+    }
+  }
+  chara->drawBmpOnSprite(sprite, 0, from * 32);
+  sprite->pushSprite(0, from * 32);
   return millis() - startTime;
 }
 

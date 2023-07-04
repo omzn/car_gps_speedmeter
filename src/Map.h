@@ -30,6 +30,7 @@ class Map {
   uint32_t setScrollRange(uint8_t from, uint8_t to);
   uint32_t drawEntireMap();
   uint32_t drawPartialMap();
+  uint32_t drawPartialMap(int offset, int from, int to);
   void setSpeed(uint8_t s);
   void setDirection(uint8_t d);
   void setStatus(uint8_t d);
@@ -41,9 +42,12 @@ class Map {
   unsigned char (*image)[2048];
   int16_t pos_x, pos_y, width, height, target_x, target_y;
 
+  int8_t slow_scroll_from;
+  int8_t slow_scroll_to;
   uint8_t scroll_from;
   uint8_t scroll_to;
   int16_t offset_x;
+  int16_t slow_offset_x;
   uint8_t status;
   uint8_t speed;    // speed (1-) drawing interval (5 is slow, 1 is fast)
   uint8_t pattern;  // character pattern (0-4)

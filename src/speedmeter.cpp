@@ -18,12 +18,14 @@
 
 //#define FONT_7SEG28 tft.setFreeFont(&DSEG7Classic_BoldItalic28pt7b)
 #define FONT_7SEG_IMG img.setFont(&Mazda_Type_Bold32pt7b)
-#define FONT_SANS18 tft.setFont(&fonts::FreeSansBold12pt7b)
 //#define FONT_SANS_IMG img.setFont(&fonts::FreeSansBold12pt7b)
 #define FONT_SANS_IMG img.setFont(&Mazda_Type_Regular10pt7b)
 
-#define TIMEZONE (9)
+#define TFT_SKY_FINE 0x43fc
+#define TFT_SKY_SUNSET 0xfc43
+#define TFT_SKY_NIGHT TFT_NAVY
 
+#define TIMEZONE (9)
 #define NUM_OF_VIEWS (2)
 
 uint8_t view = 0;
@@ -38,6 +40,15 @@ Map background = Map(&tft, &aquatan, (unsigned char (*)[2048])bgimg);
 
 TinyGPSPlus gps;
 HardwareSerial hs(2);
+
+bool debug = false;
+
+int aquatan_speed = 8;
+int gps_speed = 0;
+double gps_course;
+int gps_hour = 13;
+int gps_month = 6;
+
 
 String format_digit(float f, int digits, int decimal = 0) {
   int divnum = pow(10, digits - 1 + decimal);
@@ -112,41 +123,47 @@ void drawBmpOnSprite(LGFX_Sprite *sp, unsigned char *data, int16_t x, int16_t y,
 }
 
 void speedBox(int x, int y) {
-  img.fillSprite(0x43fc);
+  int morning_begin = 5;
+  int sunset_begin = 18;
+  int night_begin = 20; 
 
-//  img.fillRect(0, 0, 240, 80, 0xfc43);
-//  img.drawRoundRect(0, 0, 240, 80, 5, TFT_WHITE);
-//  img.drawRoundRect(1, 1, 238, 78, 5, TFT_WHITE);
+  if (gps_month <= 1 && gps_month >= 11) {
+    morning_begin = 7;
+    sunset_begin = 16;
+    night_begin = 18; 
+  } else if ((gps_month >= 2 && gps_month <= 4) || (gps_month >= 8 && gps_month <= 10)) {
+    morning_begin = 6;
+    sunset_begin = 17;
+    night_begin = 19; 
+  }
 
+  if (gps_hour >= sunset_begin  && gps_hour < night_begin) {
+    img.fillSprite(TFT_SKY_SUNSET);
+    img.fillCircle(30,128,25,TFT_YELLOW);
+  } else if (gps_hour >= night_begin || gps_hour < morning_begin) {
+    img.fillSprite(TFT_SKY_NIGHT);
+    img.fillCircle(30,30,25,TFT_YELLOW);
+    img.fillCircle(25,25,25,TFT_SKY_NIGHT);
+  } else {
+    img.fillSprite(TFT_SKY_FINE);
+    img.fillCircle(10,10,25,TFT_YELLOW);
+    img.fillArc(10,10,28,40,0,10,TFT_YELLOW);
+    img.fillArc(10,10,28,40,30,40,TFT_YELLOW);
+    img.fillArc(10,10,28,40,60,70,TFT_YELLOW);
+    img.fillArc(10,10,28,40,90,100,TFT_YELLOW);
+    img.fillArc(10,10,28,40,330,340,TFT_YELLOW);
+  }
+  
   FONT_7SEG_IMG;
   img.setTextColor(TFT_WHITE);
-  String str = format_digit(gps.speed.kmph(), 3, 0);
+  String str = format_digit(gps_speed, 3, 0);
   img.drawString(str, img.width() / 2 + 40 - img.textWidth(str), 16);
 
   FONT_SANS_IMG;
   str = "km/h";
   img.drawString(str, img.width() / 2 + 110 - img.textWidth(str), 50);
-  str = TinyGPSPlus::cardinal(gps.course.deg());
+  str = TinyGPSPlus::cardinal(gps_course);
   img.drawString(str, img.width() / 2 + 110 - img.textWidth(str), 16);
-
-  //  img.drawString(String(speed), 66, 16);
-  img.pushSprite(x, y, TFT_TRANSPARENT);
-}
-
-void clockBox(int x, int y) {
-  img.fillSprite(TFT_TRANSPARENT);
-
-  img.fillRoundRect(0, 0, 240, 80, 5, TFT_VIOLET);
-  img.drawRoundRect(0, 0, 240, 80, 5, TFT_WHITE);
-  img.drawRoundRect(1, 1, 238, 78, 5, TFT_WHITE);
-  FONT_7SEG_IMG;
-  img.setTextColor(TFT_WHITE);
-
-  int hour = (gps.time.hour() + TIMEZONE) % 24;
-  int minute = gps.time.minute();
-
-  String str = (hour < 10 ? "!" : "") + String(hour) + ":" + (minute < 10 ? "0" : "") + String(minute);
-  img.drawString(str, img.width() / 2 + 40 - img.textWidth(str), 16);
 
   //  img.drawString(String(speed), 66, 16);
   img.pushSprite(x, y, TFT_TRANSPARENT);
@@ -171,56 +188,14 @@ void drawView(int x, int y, int v) {
   if (v == 0) {
     speedBox(x, y);
   } else if (v == 1) {
-    clockBox(x, y);
+    speedBox(x, y);
+//    clockBox(x, y);
   }
 }
 
 void drawScreen() {
   drawView(0, 0, view);
 }
-
-void displayInfo() {
-  Serial.print(F("Location: "));
-  if (gps.location.isValid()) {
-    Serial.print(gps.location.lat(), 6);
-    Serial.print(F(","));
-    Serial.print(gps.location.lng(), 6);
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.print(F("  Date/Time: "));
-  if (gps.date.isValid()) {
-    Serial.print(gps.date.month());
-    Serial.print(F("/"));
-    Serial.print(gps.date.day());
-    Serial.print(F("/"));
-    Serial.print(gps.date.year());
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.print(F(" "));
-  if (gps.time.isValid()) {
-    if (gps.time.hour() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.hour());
-    Serial.print(F(":"));
-    if (gps.time.minute() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.minute());
-    Serial.print(F(":"));
-    if (gps.time.second() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.second());
-    Serial.print(F("."));
-    if (gps.time.centisecond() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.centisecond());
-  } else {
-    Serial.print(F("INVALID"));
-  }
-
-  Serial.println();
-}
-
-int aquatan_speed = 8;
 
 void setup() {
   pinMode(PIN_TOUCH, INPUT);
@@ -229,7 +204,7 @@ void setup() {
   // tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
-  img.createSprite(240,80);
+  img.createSprite(240,128);
   //  drawScreen();
   //  String msg = "Seeking satellites";
   //  messageBox(0, 0, msg);
@@ -256,8 +231,11 @@ void setup() {
   aquatan.setSpeed(aquatan_speed);
 }
 
+
 void loop() {
   static bool gps_wasvalid = true;
+  static uint32_t debug_timer = millis();
+  static int speed_diff = 10;
 
   if (btnint) {
     view++;
@@ -275,18 +253,32 @@ void loop() {
       ;
   }
 
-  if (!gps.location.isValid()) {
+  if (!gps.location.isValid() && !debug) {
     if (gps_wasvalid) {
       gps_wasvalid = false;
       drawScreen();
-      String msg = "Seeking satellites";
-      messageBox(0, 0, msg);
+      messageBox(0, 0, "Seeking satellites:" + String(gps.satellites.value()));
       background.setStatus(STATUS_WAIT);
       aquatan.setStatus(STATUS_WAIT);
       aquatan.setOrient(ORIENT_SLEEP);
       aquatan.setSpeed(4);
     }
   } else {
+    if (debug) {
+      if (millis() - debug_timer > 3000) {
+        debug_timer = millis();
+        gps_speed = gps_speed + speed_diff;
+        speed_diff = gps_speed == 100 ? -10 : (gps_speed == 0 ? 10 : speed_diff);
+        gps_hour = (gps_hour + 1) % 24;
+      }
+      gps_course = 0.0;
+    } else {
+      gps_speed = gps.speed.kmph();
+      gps_course = gps.course.deg();
+      gps_hour = (gps.time.hour() + TIMEZONE) % 24 ;
+      gps_month = gps.date.month();
+    }
+
     gps_wasvalid = true;
     drawScreen();
     /*
@@ -295,13 +287,17 @@ void loop() {
         bg.move_diff 16  8  4  2      move_diff = 8 / 2 ^ (aquatan_speed - 1) = 8 >> (aquatan_speed - 1)
     */
 
-    if (gps.speed.kmph() > 5) {
-      aquatan_speed = map(constrain(gps.speed.kmph(), 20, 80) / 20, 1, 4, 4, 1);
+    if (gps_speed > 5) {
+      aquatan_speed = map(constrain(gps_speed, 20, 80) / 20, 1, 4, 4, 1);
       background.setSpeed(aquatan_speed);
       background.setStatus(STATUS_MOVE);
       background.setDirection(MOVE_LEFT);
       aquatan.setSpeed(aquatan_speed);
-      aquatan.setOrient(ORIENT_LEFT);
+      if (gps_speed >= 40) {
+        aquatan.setOrient(ORIENT_CAR);
+      } else {
+        aquatan.setOrient(ORIENT_LEFT);
+      }
       aquatan.setStatus(STATUS_WAIT);
     } else {
       aquatan_speed = 4;
@@ -318,89 +314,4 @@ void loop() {
   d1 += background.update();
   int dd = (1000 / FPS) - d1 > 0 ? (1000 / FPS) - d1 : 1;
   delay(dd);
-  /*
-Serial.println(gps.location.lat(), 6); // Latitude in degrees (double)
-Serial.println(gps.location.lng(), 6); // Longitude in degrees (double)
-Serial.print(gps.location.rawLat().negative ? "-" : "+");
-Serial.println(gps.location.rawLat().deg); // Raw latitude in whole degrees
-Serial.println(gps.location.rawLat().billionths);// ... and billionths (u16/u32)
-Serial.print(gps.location.rawLng().negative ? "-" : "+");
-Serial.println(gps.location.rawLng().deg); // Raw longitude in whole degrees
-Serial.println(gps.location.rawLng().billionths);// ... and billionths (u16/u32)
-Serial.println(gps.date.value()); // Raw date in DDMMYY format (u32)
-Serial.println(gps.date.year()); // Year (2000+) (u16)
-Serial.println(gps.date.month()); // Month (1-12) (u8)
-Serial.println(gps.date.day()); // Day (1-31) (u8)
-Serial.println(gps.time.value()); // Raw time in HHMMSSCC format (u32)
-Serial.println(gps.time.hour()); // Hour (0-23) (u8)
-Serial.println(gps.time.minute()); // Minute (0-59) (u8)
-Serial.println(gps.time.second()); // Second (0-59) (u8)
-Serial.println(gps.time.centisecond()); // 100ths of a second (0-99) (u8)
-Serial.println(gps.speed.value()); // Raw speed in 100ths of a knot (i32)
-Serial.println(gps.speed.knots()); // Speed in knots (double)
-Serial.println(gps.speed.mph()); // Speed in miles per hour (double)
-Serial.println(gps.speed.mps()); // Speed in meters per second (double)
-Serial.println(gps.speed.kmph()); // Speed in kilometers per hour (double)
-Serial.println(gps.course.value()); // Raw course in 100ths of a degree (i32)
-Serial.println(gps.course.deg()); // Course in degrees (double)
-Serial.println(gps.altitude.value()); // Raw altitude in centimeters (i32)
-Serial.println(gps.altitude.meters()); // Altitude in meters (double)
-Serial.println(gps.altitude.miles()); // Altitude in miles (double)
-Serial.println(gps.altitude.kilometers()); // Altitude in kilometers (double)
-Serial.println(gps.altitude.feet()); // Altitude in feet (double)
-Serial.println(gps.satellites.value()); // Number of satellites in use (u32)
-Serial.println(gps.hdop.value()); // Horizontal Dim. of Precision (100ths-i32)
-  */
-
-  /*  BLEScanResults foundDevices = pBLEScan->start(1);
-    int count = foundDevices.getCount();
-    for (int i = 0; i < count; i++) {
-      BLEAdvertisedDevice d = foundDevices.getDevice(i);
-      if (d.haveManufacturerData()) {
-        std::string data = d.getManufacturerData();
-        int manu = data[1] << 8 | data[0];
-        if (manu == MyManufacturerId && seq != data[2]) {
-          found = true;
-          seq = data[2];
-          if (seq > 5) {
-            stable = 1;
-          }
-          temp = (float)(data[4] << 8 | data[3]) / 100.0;
-          humid = (float)(data[6] << 8 | data[5]) / 100.0;
-          press = (float)(data[8] << 8 | data[7]) / 10.0;
-          co2 = (float)(data[10] << 8 | data[9]) / 10.0;
-          Serial.printf(">>> seq: %d, t: %.1f, h: %.1f, p: %.1f c: %.1f\r\n", seq, temp, humid, press, co2);
-          if (humid == 0 || press < 900 || co2 == 0 || co2 > 5000) {
-            valid_data = false;
-            break;
-          }
-          if (stable) {
-            temperature_hist[temperature_hist_p++] = temp;
-            humidity_hist[humidity_hist_p++] = humid;
-            pressure_hist[pressure_hist_p++] = press;
-            co2_hist[co2_hist_p++] = co2;
-            temperature_hist_p %= SENSOR_HIST;
-            humidity_hist_p %= SENSOR_HIST;
-            pressure_hist_p %= SENSOR_HIST;
-            co2_hist_p %= SENSOR_HIST;
-          }
-        }
-      }
-    }
-  */
-  /*  if (btnint) {
-      DPRINTLN("touched");
-      btnint = 0;
-      int p_view = view;
-      view++;
-      view %= NUM_OF_VIEWS;
-      //    drawScreen(temp, humid, press, co2);
-      for (int i = 0; i < 12; i++) {
-  //      drawView(0 - i * 20, 0, p_view, temp, humid, press, co2);
-  //      drawView(240 - i * 20, 0, view, temp, humid, press, co2);
-  //      delay(6);
-      }
-      drawScreen(gps_speed);
-    }
-  */
 }
