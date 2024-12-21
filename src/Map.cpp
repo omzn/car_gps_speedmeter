@@ -43,9 +43,9 @@ uint32_t Map::update() {
       offset_x += move_diff;
       offset_x = (offset_x < 0 ? width + offset_x : offset_x) % width;
       e = drawPartialMap();
-      slow_offset_x += move_diff / 2;
-      slow_offset_x = (slow_offset_x < 0 ? width + slow_offset_x : slow_offset_x) % width;
-      e += drawPartialMap(slow_offset_x, slow_scroll_from, slow_scroll_to);
+//      slow_offset_x += move_diff / 2;
+//      slow_offset_x = (slow_offset_x < 0 ? width + slow_offset_x : slow_offset_x) % width;
+//      e += drawPartialMap(slow_offset_x, slow_scroll_from, slow_scroll_to);
     }
     frame++;
     frame %= speed;

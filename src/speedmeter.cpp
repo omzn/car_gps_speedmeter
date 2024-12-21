@@ -2,6 +2,7 @@
 #include "LGFX_ST7789_ESP32.hpp"  // Hardware-specific library
 #include <TinyGPSPlus.h>
 
+#include <Dusk2Dawn.h>
 //#include "DSEG7Classic-BoldItalic26pt7b.h"
 //#include "DSEG7Classic-BoldItalic28pt7b.h"
 //#include "FreeSansBold12pt7b.h"
@@ -41,14 +42,20 @@ Map background = Map(&tft, &aquatan, (unsigned char (*)[2048])bgimg);
 TinyGPSPlus gps;
 HardwareSerial hs(2);
 
-bool debug = false;
+Dusk2Dawn  *currentplace = NULL; // losAngeles(34.0522, -118.2437, -8);
+int sunrise;
+int sunset;
+
+bool debug = true;
 
 int aquatan_speed = 8;
 int gps_speed = 0;
 double gps_course;
-int gps_hour = 13;
-int gps_month = 6;
+int day_minutes = 0;
 
+int stop_begin_time = 0;
+int stop_timer = 0;
+int isStopped = 0;
 
 String format_digit(float f, int digits, int decimal = 0) {
   int divnum = pow(10, digits - 1 + decimal);
@@ -122,37 +129,46 @@ void drawBmpOnSprite(LGFX_Sprite *sp, unsigned char *data, int16_t x, int16_t y,
   }
 }
 
-void speedBox(int x, int y) {
-  int morning_begin = 5;
-  int sunset_begin = 18;
-  int night_begin = 20; 
-
-  if (gps_month <= 1 && gps_month >= 11) {
-    morning_begin = 7;
-    sunset_begin = 16;
-    night_begin = 18; 
-  } else if ((gps_month >= 2 && gps_month <= 4) || (gps_month >= 8 && gps_month <= 10)) {
-    morning_begin = 6;
-    sunset_begin = 17;
-    night_begin = 19; 
-  }
-
-  if (gps_hour >= sunset_begin  && gps_hour < night_begin) {
-    img.fillSprite(TFT_SKY_SUNSET);
-    img.fillCircle(30,128,25,TFT_YELLOW);
-  } else if (gps_hour >= night_begin || gps_hour < morning_begin) {
+void drawBG() {
+  if (day_minutes >= sunset - 60  && day_minutes < sunset + 25) {
+    img.fillSprite(day_minutes < sunset ? TFT_SKY_FINE : TFT_SKY_NIGHT);
+    int ypos = (sunset - day_minutes + 25) * 3 / 2; //  0 <= ypos <= 120
+    int ygrad = (day_minutes >=sunset) ?  8 + (day_minutes - sunset + 25) * (3 / 2) * (3 / 4) : 8 + (ypos * 3 / 4);
+    for (int i=0;i<240;i++) {
+      img.drawGradientVLine(i, ygrad, 128, day_minutes < sunset ? TFT_SKY_FINE : TFT_SKY_NIGHT,TFT_SKY_SUNSET);
+    }
+    img.fillCircle(10,128+25 - ypos/3,25,TFT_YELLOW);
+  } else if (day_minutes >= sunrise - 25  && day_minutes < sunrise + 60) {
+    img.fillSprite(day_minutes > sunrise ? TFT_SKY_FINE : TFT_SKY_NIGHT);
+    int ypos = (day_minutes - sunrise + 25) * 3 / 2; //  0 <= ypos <= 120
+    for (int i=0;i<240;i++) {
+      img.drawGradientVLine(i, 8 + ypos * 3 / 4, 128, day_minutes > sunrise ? TFT_SKY_FINE : TFT_SKY_NIGHT, TFT_SKY_SUNSET);
+    }
+    img.fillCircle(10,128+25 - ypos/3,25,TFT_YELLOW);
+    // y: ypos = 0 -> 153, ypos = 120 -> 113
+  } else if (day_minutes >= sunset + 20 || day_minutes < sunrise ) {
     img.fillSprite(TFT_SKY_NIGHT);
     img.fillCircle(30,30,25,TFT_YELLOW);
     img.fillCircle(25,25,25,TFT_SKY_NIGHT);
-  } else {
+  } else { // y = 13 - 133 で動かせる
+    int noon = (sunset - sunrise) / 2 + sunrise;
+    int ypos = 13 + abs(noon - day_minutes) * 120 / ((sunset - sunrise) / 2);
     img.fillSprite(TFT_SKY_FINE);
-    img.fillCircle(10,10,25,TFT_YELLOW);
-    img.fillArc(10,10,28,40,0,10,TFT_YELLOW);
-    img.fillArc(10,10,28,40,30,40,TFT_YELLOW);
-    img.fillArc(10,10,28,40,60,70,TFT_YELLOW);
-    img.fillArc(10,10,28,40,90,100,TFT_YELLOW);
-    img.fillArc(10,10,28,40,330,340,TFT_YELLOW);
+    img.fillCircle(10,ypos,25,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,0,10,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,30,40,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,60,70,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,90,100,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,210,220,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,240,250,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,270,280,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,300,310,TFT_YELLOW);
+    img.fillArc(10,ypos,28,40,330,340,TFT_YELLOW);
   }
+}
+
+void speedBox(int x, int y) {
+  drawBG();
   
   FONT_7SEG_IMG;
   img.setTextColor(TFT_WHITE);
@@ -168,6 +184,25 @@ void speedBox(int x, int y) {
   //  img.drawString(String(speed), 66, 16);
   img.pushSprite(x, y, TFT_TRANSPARENT);
 }
+
+void timerBox(int x, int y) {
+  drawBG();
+  
+  FONT_7SEG_IMG;
+  img.setTextColor(TFT_WHITE);
+  String str = format_digit(stop_timer / 1000, 3, 0);
+  img.drawString(str, img.width() / 2 + 40 - img.textWidth(str), 16);
+
+  FONT_SANS_IMG;
+  str = "sec";
+  img.drawString(str, img.width() / 2 + 110 - img.textWidth(str), 50);
+  //str = TinyGPSPlus::cardinal(gps_course);
+  //img.drawString(str, img.width() / 2 + 110 - img.textWidth(str), 16);
+
+  //  img.drawString(String(speed), 66, 16);
+  img.pushSprite(x, y, TFT_TRANSPARENT);
+}
+
 
 void messageBox(int x, int y, String message) {
   img.fillSprite(TFT_NAVY);
@@ -188,13 +223,13 @@ void drawView(int x, int y, int v) {
   if (v == 0) {
     speedBox(x, y);
   } else if (v == 1) {
-    speedBox(x, y);
-//    clockBox(x, y);
+//    speedBox(x, y);
+    timerBox(x, y);
   }
 }
 
 void drawScreen() {
-  drawView(0, 0, view);
+  drawView(0, 0, isStopped);
 }
 
 void setup() {
@@ -265,18 +300,35 @@ void loop() {
     }
   } else {
     if (debug) {
-      if (millis() - debug_timer > 3000) {
+      /*
+      DEBUG MODE
+      */
+      if (millis() - debug_timer > 1000) {
         debug_timer = millis();
         gps_speed = gps_speed + speed_diff;
         speed_diff = gps_speed == 100 ? -10 : (gps_speed == 0 ? 10 : speed_diff);
-        gps_hour = (gps_hour + 1) % 24;
+        day_minutes += 10;
+        day_minutes %= 60*8;
+        sunrise = 2 * 60 + 0;
+        sunset =  6 * 60 + 0;
+        DPRINTF("day_minutes %d sunrise %d sunset %d\n",day_minutes,sunrise,sunset);
       }
       gps_course = 0.0;
     } else {
       gps_speed = gps.speed.kmph();
       gps_course = gps.course.deg();
-      gps_hour = (gps.time.hour() + TIMEZONE) % 24 ;
-      gps_month = gps.date.month();
+      day_minutes = ((gps.time.hour() + TIMEZONE) % 24) * 60 + gps.time.minute();
+      if (currentplace == NULL) {
+        DPRINTF("lat %f  lng %f\n",gps.location.lat(),gps.location.lng());
+        currentplace = new Dusk2Dawn(gps.location.lat(),gps.location.lng(),TIMEZONE);
+        sunrise = currentplace->sunrise(gps.date.year(),gps.date.month(),gps.date.day(),false);
+        sunset = currentplace->sunset(gps.date.year(),gps.date.month(),gps.date.day(),false);
+        char sunrise_str[] = "00:00";
+        Dusk2Dawn::min2str(sunrise_str,sunrise);
+        char sunset_str[] = "00:00";
+        Dusk2Dawn::min2str(sunset_str,sunset);
+        DPRINTF("SUNRISE %s  SUNSET %s\n",sunrise_str,sunset_str);
+      }
     }
 
     gps_wasvalid = true;
@@ -299,6 +351,7 @@ void loop() {
         aquatan.setOrient(ORIENT_LEFT);
       }
       aquatan.setStatus(STATUS_WAIT);
+      isStopped = 0;
     } else {
       aquatan_speed = 4;
       // background.setSpeed(aquatan_speed);
@@ -306,6 +359,11 @@ void loop() {
       aquatan.setSpeed(aquatan_speed);
       aquatan.setOrient(ORIENT_FRONT);
       aquatan.setStatus(STATUS_WAIT);
+      if (isStopped == 0) {
+        stop_begin_time = millis();
+        isStopped = 1;
+      }
+      stop_timer = millis() - stop_begin_time;      
     }
   }
 
